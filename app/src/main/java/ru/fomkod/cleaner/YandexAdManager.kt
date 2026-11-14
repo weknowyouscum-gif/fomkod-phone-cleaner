@@ -1,9 +1,13 @@
 package ru.fomkod.cleaner
 
+import android.app.Activity
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import com.yandex.mobile.ads.common.AdError
+import com.yandex.mobile.ads.common.AdRequestConfiguration
 import com.yandex.mobile.ads.common.AdRequestError
+import com.yandex.mobile.ads.common.ImpressionData
 import com.yandex.mobile.ads.common.MobileAds
 import com.yandex.mobile.ads.rewarded.Reward
 import com.yandex.mobile.ads.rewarded.RewardedAd
@@ -29,6 +33,7 @@ object YandexAdManager {
 
     suspend fun loadAndShowRewarded(context: Context, onRewarded: () -> Unit): Boolean {
         if (!hasInternet(context)) return false
+        val activity = context as? Activity ?: return false
 
         return suspendCancellableCoroutine { cont ->
             val loader = RewardedAdLoader(context)
@@ -39,7 +44,7 @@ object YandexAdManager {
                     ad = rewardedAd
                     rewardedAd.setAdEventListener(object : RewardedAdEventListener {
                         override fun onAdShown() {}
-                        override fun onAdFailedToShow(error: AdRequestError) {
+                        override fun onAdFailedToShow(adError: AdError) {
                             if (cont.isActive) cont.resume(false)
                         }
                         override fun onAdDismissed() {
@@ -49,9 +54,9 @@ object YandexAdManager {
                             onRewarded()
                         }
                         override fun onAdClicked() {}
-                        override fun onAdImpression(data: com.yandex.mobile.ads.common.ImpressionData?) {}
+                        override fun onAdImpression(impressionData: ImpressionData?) {}
                     })
-                    rewardedAd.show(context as? android.app.Activity ?: return)
+                    rewardedAd.show(activity)
                 }
 
                 override fun onAdFailedToLoad(error: AdRequestError) {
@@ -59,8 +64,8 @@ object YandexAdManager {
                 }
             })
 
-            val request = com.yandex.mobile.ads.common.AdRequest.Builder(YANDEX_AD_UNIT_ID).build()
-            loader.loadAd(request)
+            val adRequestConfiguration = AdRequestConfiguration.Builder(YANDEX_AD_UNIT_ID).build()
+            loader.loadAd(adRequestConfiguration)
 
             cont.invokeOnCancellation {
                 ad?.setAdEventListener(null)
