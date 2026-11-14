@@ -1,6 +1,8 @@
 package ru.fomkod.cleaner
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.os.Environment
 import android.os.StatFs
 import java.io.File
@@ -15,6 +17,17 @@ data class DuplicateGroup(
     val hash: String,
     val files: List<File>,
     val size: Long
+)
+
+data class LargeFile(
+    val file: File,
+    val size: Long
+)
+
+data class AppInfo(
+    val packageName: String,
+    val appName: String,
+    val isSystem: Boolean
 )
 
 object CleanerEngine {
@@ -43,17 +56,18 @@ object CleanerEngine {
         freed += cleanTempAndApk(root)
 
         // Remove empty folders
-        freed += removeEmptyFolders(root)
+        removeEmptyFolders(root)
 
         val mb = freed / (1024 * 1024)
         return CleanResult(freed, "Очищено: $mb МБ! Телефон работает отлично")
     }
 
-    suspend fun fullCleanScan(context: Context): Pair<Long, List<DuplicateGroup>> {
-        // First do simple clean and collect freed, then scan duplicates
+    suspend fun fullCleanScan(context: Context): FullCleanResult {
         val simple = simpleClean(context)
         val groups = findDuplicates(context)
-        return Pair(simple.freedBytes, groups)
+        val largeFiles = findLargeFiles(context)
+        val unusedApps = findUnusedApps(context)
+        return FullCleanResult(simple.freedBytes, groups, largeFiles, unusedApps)
     }
 
     private fun cleanTempAndApk(dir: File?): Long {
@@ -71,18 +85,16 @@ object CleanerEngine {
         return freed
     }
 
-    private fun removeEmptyFolders(dir: File?): Long {
-        if (dir == null || !dir.exists()) return 0L
-        var removed = 0
+    private fun removeEmptyFolders(dir: File?) {
+        if (dir == null || !dir.exists()) return
         dir.listFiles()?.forEach { file ->
             if (file.isDirectory) {
                 removeEmptyFolders(file)
                 if (file.listFiles()?.isEmpty() == true) {
-                    if (file.delete()) removed++
+                    file.delete()
                 }
             }
         }
-        return removed.toLong() // not bytes, but count; adjust if needed
     }
 
     private fun deleteDir(dir: File?): Long {
@@ -120,7 +132,6 @@ object CleanerEngine {
             }
         }
 
-        // Group by size first
         val bySize = candidates.groupBy { it.length() }.filter { it.value.size > 1 }
 
         val groups = mutableListOf<DuplicateGroup>()
@@ -139,6 +150,35 @@ object CleanerEngine {
         return groups
     }
 
+    private fun findLargeFiles(context: Context): List<LargeFile> {
+        val large = mutableListOf<LargeFile>()
+        val root = Environment.getExternalStorageDirectory()
+        val threshold = 50 * 1024 * 1024L // 50 MB
+
+        if (root.exists()) {
+            root.walkTopDown().forEach { file ->
+                if (file.isFile && file.length() > threshold && !file.name.startsWith(".")) {
+                    large.add(LargeFile(file, file.length()))
+                }
+            }
+        }
+        return large.sortedByDescending { it.size }.take(20)
+    }
+
+    private fun findUnusedApps(context: Context): List<AppInfo> {
+        val pm = context.packageManager
+        val apps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+        return apps.filter { app ->
+            (app.flags and ApplicationInfo.FLAG_SYSTEM) == 0 && app.packageName != context.packageName
+        }.map { app ->
+            AppInfo(
+                packageName = app.packageName,
+                appName = pm.getApplicationLabel(app).toString(),
+                isSystem = false
+            )
+        }.sortedBy { it.appName }
+    }
+
     private fun md5(file: File): String {
         return try {
             val md = MessageDigest.getInstance("MD5")
@@ -151,7 +191,7 @@ object CleanerEngine {
             }
             md.digest().joinToString("") { "%02x".format(it) }
         } catch (e: Exception) {
-            file.absolutePath // fallback
+            file.absolutePath
         }
     }
 
@@ -159,7 +199,6 @@ object CleanerEngine {
         var freed = 0L
         groups.forEachIndexed { index, group ->
             if (selectedIndices.contains(index)) {
-                // Keep first as original, delete rest
                 group.files.drop(1).forEach { file ->
                     val size = file.length()
                     if (file.delete()) freed += size
@@ -168,4 +207,22 @@ object CleanerEngine {
         }
         return freed
     }
+
+    fun deleteLargeFiles(files: List<LargeFile>, selected: Set<Int>): Long {
+        var freed = 0L
+        files.forEachIndexed { index, large ->
+            if (selected.contains(index)) {
+                val size = large.size
+                if (large.file.delete()) freed += size
+            }
+        }
+        return freed
+    }
 }
+
+data class FullCleanResult(
+    val freedBytes: Long,
+    val duplicates: List<DuplicateGroup>,
+    val largeFiles: List<LargeFile>,
+    val unusedApps: List<AppInfo>
+)
