@@ -5,36 +5,31 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-    <!-- Saturated broom handle -->
-    <path
-        android:fillColor="#0D47A1"
-        android:pathData="M48,18 L56,18 L60,72 L48,72 Z" />
-
-    <!-- Broom bristles - saturated blue -->
+    <!-- Simple reliable broom -->
     <path
         android:fillColor="#1565C0"
-        android:pathData="M32,70 Q54,78 76,70 L72,92 Q54,102 36,92 Z" />
+        android:pathData="M50,22 L58,22 L62,68 L46,68 Z" />
     <path
         android:fillColor="#1976D2"
-        android:pathData="M38,74 Q54,82 70,74 L68,88 Q54,94 40,88 Z" />
+        android:pathData="M36,66 Q54,74 72,66 L68,86 Q54,96 40,86 Z" />
 
-    <!-- Ф letter - dark saturated -->
+    <!-- Ф -->
     <path
-        android:fillColor="#0A2472"
-        android:pathData="M22,38 h22 v6 h-22 z M30,38 v22 h8 v-22 z" />
+        android:fillColor="#0D47A1"
+        android:pathData="M24,40 H46 V48 H24 Z M32,40 V62 H40 V40 Z" />
 
-    <!-- К letter -->
+    <!-- К -->
     <path
-        android:fillColor="#0A2472"
-        android:pathData="M58,38 h8 v22 h-8 z M66,42 l14,9 l-14,9 z" />
+        android:fillColor="#0D47A1"
+        android:pathData="M56,40 H64 V62 H56 Z M64,46 L78,54 L64,62 Z" />
 
-    <!-- Red badge circle top-right -->
+    <!-- Red badge -->
     <path
         android:fillColor="#E53935"
-        android:pathData="M78,16 m-12,0 a12,12 0 1,0 24,0 a12,12 0 1,0 -24,0" />
+        android:pathData="M82,20 m-10,0 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0" />
 
-    <!-- White number 2 -->
+    <!-- Number 2 -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M74,12 h8 v3 h-5 v2 h5 v3 h-8 v-2 h5 v-2 h-5 z" />
+        android:pathData="M76,16 H84 V19 H79 V21 H84 V24 H76 V21 H81 V19 H76 Z" />
 </vector>
