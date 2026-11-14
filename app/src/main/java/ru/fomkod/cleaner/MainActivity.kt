@@ -58,17 +58,35 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun FomKodCleanerApp() {
         val context = LocalContext.current
-        val activity = context as Activity
         val scope = rememberCoroutineScope()
 
         var storage by remember { mutableStateOf(CleanerEngine.getStorageInfo()) }
         var status by remember { mutableStateOf("Готов к очистке") }
         var showPermissionDialog by remember { mutableStateOf(false) }
-        var isScanning by remember { mutableStateOf(false) }
         var duplicateGroups by remember { mutableStateOf<List<DuplicateGroup>>(emptyList()) }
-        var selected by remember { mutableStateOf(setOf<Int>()) }
         var showConfirm by remember { mutableStateOf(false) }
-        var showApps by remember { mutableStateOf(false) }
+
+        fun requestPermissionsLocal() {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                    intent.data = Uri.parse("package:${context.packageName}")
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    context.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                }
+            } else {
+                permissionLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.READ_EXTERNAL_STORAGE,
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE
+                    )
+                )
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                permissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
+            }
+        }
 
         MaterialTheme(
             colorScheme = lightColorScheme(
@@ -114,19 +132,13 @@ class MainActivity : ComponentActivity() {
 
                 Button(
                     onClick = {
-                        if (!hasAllPermissions()) {
-                            showPermissionDialog = true
-                        } else {
-                            scope.launch {
-                                isScanning = true
-                                status = "Идёт простая очистка..."
-                                val result = withContext(Dispatchers.IO) {
-                                    CleanerEngine.simpleClean(context)
-                                }
-                                status = result.message
-                                storage = CleanerEngine.getStorageInfo()
-                                isScanning = false
+                        scope.launch {
+                            status = "Идёт простая очистка..."
+                            val result = withContext(Dispatchers.IO) {
+                                CleanerEngine.simpleClean(context)
                             }
+                            status = result.message
+                            storage = CleanerEngine.getStorageInfo()
                         }
                     },
                     modifier = Modifier
@@ -141,28 +153,30 @@ class MainActivity : ComponentActivity() {
 
                 Button(
                     onClick = {
-                        if (!hasAllPermissions()) {
-                            showPermissionDialog = true
-                        } else {
-                            scope.launch {
-                                status = "Проверка интернета и рекламы..."
-                                val hasNet = YandexAdManager.hasInternet(context)
-                                if (!hasNet) {
+                        scope.launch {
+                            status = "Проверка интернета и рекламы..."
+                            val hasNet = YandexAdManager.hasInternet(context)
+                            if (!hasNet) {
+                                status = "У вас выключен интернет — ничего страшного, мы сделаем полную очистку бесплатно!"
+                            } else {
+                                val adShown = YandexAdManager.loadAndShowRewarded(context) {}
+                                if (!adShown) {
                                     status = "У вас выключен интернет — ничего страшного, мы сделаем полную очистку бесплатно!"
-                                    performFullClean()
-                                } else {
-                                    // Try ad with timeout logic simplified (real timeout needs more)
-                                    val adShown = YandexAdManager.loadAndShowRewarded(context) {
-                                        // on reward
-                                    }
-                                    if (adShown) {
-                                        performFullClean()
-                                    } else {
-                                        status = "У вас выключен интернет — ничего страшного, мы сделаем полную очистку бесплатно!"
-                                        performFullClean()
-                                    }
                                 }
                             }
+                            // Always perform full clean after ad attempt or no net
+                            status = "Идёт полная очистка и поиск дубликатов..."
+                            val (freed, groups) = withContext(Dispatchers.IO) {
+                                CleanerEngine.fullCleanScan(context)
+                            }
+                            duplicateGroups = groups
+                            showConfirm = groups.isNotEmpty()
+                            status = if (groups.isEmpty()) {
+                                "Очищено: ${freed / (1024 * 1024)} МБ! Телефон работает отлично"
+                            } else {
+                                "Найдены дубликаты. Подтвердите удаление."
+                            }
+                            storage = CleanerEngine.getStorageInfo()
                         }
                     },
                     modifier = Modifier
@@ -188,6 +202,15 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                Spacer(Modifier.height(16.dp))
+
+                Button(
+                    onClick = { showPermissionDialog = true },
+                    modifier = Modifier.fillMaxWidth().height(60.dp)
+                ) {
+                    Text("Проверить разрешения", fontSize = 18.sp)
+                }
+
                 Spacer(Modifier.weight(1f))
                 Text(
                     "Бесплатное социальное приложение. Экосистема ФомКод",
@@ -204,7 +227,7 @@ class MainActivity : ComponentActivity() {
                     confirmButton = {
                         Button(
                             onClick = {
-                                requestPermissions()
+                                requestPermissionsLocal()
                                 showPermissionDialog = false
                             },
                             modifier = Modifier.height(60.dp)
@@ -216,22 +239,18 @@ class MainActivity : ComponentActivity() {
             }
 
             if (showConfirm) {
-                // Simplified confirm dialog for duplicates
                 AlertDialog(
                     onDismissRequest = { showConfirm = false },
                     title = { Text("Найден мусор", fontSize = 24.sp) },
                     text = {
-                        Column {
-                            Text("Дубликаты фотографий и картинок: ${duplicateGroups.size} групп", fontSize = 20.sp)
-                            // More details can be expanded
-                        }
+                        Text("Дубликаты фотографий и картинок: ${duplicateGroups.size} групп", fontSize = 20.sp)
                     },
                     confirmButton = {
                         Button(
                             onClick = {
                                 scope.launch {
                                     val freed = withContext(Dispatchers.IO) {
-                                        CleanerEngine.deleteSelected(duplicateGroups, selected)
+                                        CleanerEngine.deleteSelected(duplicateGroups, duplicateGroups.indices.toSet())
                                     }
                                     status = "Очищено: ${freed / (1024 * 1024)} МБ! Телефон работает отлично"
                                     storage = CleanerEngine.getStorageInfo()
@@ -246,45 +265,5 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
-    }
-
-    private fun hasAllPermissions(): Boolean {
-        // Simplified check; real impl would check MANAGE_EXTERNAL_STORAGE etc.
-        return true // For demo; expand as needed
-    }
-
-    private fun requestPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            try {
-                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
-                intent.data = Uri.parse("package:$packageName")
-                startActivity(intent)
-            } catch (e: Exception) {
-                startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
-            }
-        } else {
-            permissionLauncher.launch(
-                arrayOf(
-                    Manifest.permission.READ_EXTERNAL_STORAGE,
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE
-                )
-            )
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissionLauncher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
-        }
-    }
-
-    private suspend fun performFullClean() {
-        isScanning = true
-        status = "Идёт полная очистка и поиск дубликатов..."
-        val (freed, groups) = withContext(Dispatchers.IO) {
-            CleanerEngine.fullCleanScan(this@MainActivity)
-        }
-        duplicateGroups = groups
-        selected = groups.indices.toSet() // all selected by default
-        showConfirm = groups.isNotEmpty()
-        status = if (groups.isEmpty()) "Очищено: ${freed / (1024 * 1024)} МБ! Телефон работает отлично" else "Найдены дубликаты. Подтвердите удаление."
-        isScanning = false
     }
 }
