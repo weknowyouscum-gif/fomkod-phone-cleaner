@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -63,8 +64,8 @@ class MainActivity : ComponentActivity() {
         var storage by remember { mutableStateOf(CleanerEngine.getStorageInfo()) }
         var status by remember { mutableStateOf("Готов к очистке") }
         var showPermissionDialog by remember { mutableStateOf(false) }
-        var duplicateGroups by remember { mutableStateOf<List<DuplicateGroup>>(emptyList()) }
-        var showConfirm by remember { mutableStateOf(false) }
+        var fullResult by remember { mutableStateOf<FullCleanResult?>(null) }
+        var showFullDialog by remember { mutableStateOf(false) }
 
         fun requestPermissionsLocal() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
@@ -90,45 +91,52 @@ class MainActivity : ComponentActivity() {
 
         MaterialTheme(
             colorScheme = lightColorScheme(
-                background = Color(0xFFF5F7FA),
+                background = Color(0xFFF8F9FA),
                 surface = Color.White,
                 primary = Color(0xFF1976D2),
-                secondary = Color(0xFF388E3C)
+                secondary = Color(0xFF2E7D32)
             )
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp)
+                    .padding(20.dp)
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    "Очистка телефона: ФомКод",
-                    fontSize = 28.sp,
+                    "Очистка телефона",
+                    fontSize = 30.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF111111)
+                    color = Color(0xFF0D47A1)
                 )
-                Spacer(Modifier.height(24.dp))
+                Text(
+                    "ФомКод",
+                    fontSize = 26.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color(0xFF1565C0)
+                )
+                Spacer(Modifier.height(28.dp))
 
                 val usedGb = storage.usedBytes / (1024.0 * 1024 * 1024)
                 val totalGb = storage.totalBytes / (1024.0 * 1024 * 1024)
                 Text(
                     "Занято %.1f ГБ из %.1f ГБ".format(usedGb, totalGb),
                     fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF212121)
                 )
                 LinearProgressIndicator(
                     progress = { (storage.usedBytes.toFloat() / storage.totalBytes.coerceAtLeast(1)) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(20.dp)
-                        .padding(vertical = 8.dp),
+                        .height(22.dp)
+                        .padding(vertical = 10.dp),
                     color = Color(0xFF1976D2),
-                    trackColor = Color(0xFFE0E0E0)
+                    trackColor = Color(0xFFE3F2FD)
                 )
 
-                Spacer(Modifier.height(32.dp))
+                Spacer(Modifier.height(36.dp))
 
                 Button(
                     onClick = {
@@ -143,123 +151,133 @@ class MainActivity : ComponentActivity() {
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(80.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1976D2))
+                        .height(84.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1976D2)),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp)
                 ) {
                     Text("Простая очистка (Быстро)", fontSize = 24.sp, fontWeight = FontWeight.Bold)
                 }
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(20.dp))
 
                 Button(
                     onClick = {
                         scope.launch {
-                            status = "Проверка интернета и рекламы..."
+                            status = "Проверка интернета..."
                             val hasNet = YandexAdManager.hasInternet(context)
                             if (!hasNet) {
-                                status = "У вас выключен интернет — ничего страшного, мы сделаем полную очистку бесплатно!"
+                                status = "Интернет выключен — делаем полную очистку бесплатно"
                             } else {
-                                val adShown = YandexAdManager.loadAndShowRewarded(context) {}
-                                if (!adShown) {
-                                    status = "У вас выключен интернет — ничего страшного, мы сделаем полную очистку бесплатно!"
-                                }
+                                YandexAdManager.loadAndShowRewarded(context) {}
                             }
-                            // Always perform full clean after ad attempt or no net
-                            status = "Идёт полная очистка и поиск дубликатов..."
-                            val (freed, groups) = withContext(Dispatchers.IO) {
+                            status = "Сканирование дубликатов, больших файлов и приложений..."
+                            val result = withContext(Dispatchers.IO) {
                                 CleanerEngine.fullCleanScan(context)
                             }
-                            duplicateGroups = groups
-                            showConfirm = groups.isNotEmpty()
-                            status = if (groups.isEmpty()) {
-                                "Очищено: ${freed / (1024 * 1024)} МБ! Телефон работает отлично"
-                            } else {
-                                "Найдены дубликаты. Подтвердите удаление."
-                            }
+                            fullResult = result
+                            showFullDialog = true
+                            status = "Найдено для очистки. Выберите, что удалить."
                             storage = CleanerEngine.getStorageInfo()
                         }
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(80.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF388E3C))
+                        .height(84.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp)
                 ) {
                     Text("Полная очистка (Глубокая)", fontSize = 24.sp, fontWeight = FontWeight.Bold)
                 }
 
-                Spacer(Modifier.height(32.dp))
+                Spacer(Modifier.height(36.dp))
 
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                 ) {
                     Text(
                         status,
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(24.dp),
-                        color = Color(0xFF111111)
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(28.dp),
+                        color = Color(0xFF212121),
+                        textAlign = TextAlign.Center
                     )
                 }
 
-                Spacer(Modifier.height(16.dp))
-
-                Button(
-                    onClick = { showPermissionDialog = true },
-                    modifier = Modifier.fillMaxWidth().height(60.dp)
-                ) {
-                    Text("Проверить разрешения", fontSize = 18.sp)
-                }
-
                 Spacer(Modifier.weight(1f))
+                Spacer(Modifier.height(24.dp))
                 Text(
-                    "Бесплатное социальное приложение. Экосистема ФомКод",
-                    fontSize = 16.sp,
-                    color = Color(0xFF555555)
+                    "Бесплатное социальное приложение · Экосистема ФомКод",
+                    fontSize = 14.sp,
+                    color = Color(0xFF757575),
+                    textAlign = TextAlign.Center
                 )
             }
 
             if (showPermissionDialog) {
                 AlertDialog(
                     onDismissRequest = { showPermissionDialog = false },
-                    title = { Text("Нужен доступ", fontSize = 24.sp) },
-                    text = { Text("Разрешите доступ к файлам для очистки телефона", fontSize = 20.sp) },
+                    title = { Text("Нужен доступ к файлам", fontSize = 22.sp) },
+                    text = { Text("Разрешите доступ ко всем файлам, чтобы приложение могло очистить телефон", fontSize = 18.sp) },
                     confirmButton = {
-                        Button(
-                            onClick = {
-                                requestPermissionsLocal()
-                                showPermissionDialog = false
-                            },
-                            modifier = Modifier.height(60.dp)
-                        ) {
-                            Text("Разрешить доступ для очистки", fontSize = 18.sp)
+                        Button(onClick = {
+                            requestPermissionsLocal()
+                            showPermissionDialog = false
+                        }) {
+                            Text("Разрешить", fontSize = 18.sp)
                         }
                     }
                 )
             }
 
-            if (showConfirm) {
+            if (showFullDialog && fullResult != null) {
+                val result = fullResult!!
                 AlertDialog(
-                    onDismissRequest = { showConfirm = false },
-                    title = { Text("Найден мусор", fontSize = 24.sp) },
+                    onDismissRequest = { showFullDialog = false },
+                    title = { Text("Найдено для очистки", fontSize = 22.sp) },
                     text = {
-                        Text("Дубликаты фотографий и картинок: ${duplicateGroups.size} групп", fontSize = 20.sp)
+                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                            if (result.duplicates.isNotEmpty()) {
+                                Text("Дубликаты фото: ${result.duplicates.size} групп", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.height(8.dp))
+                            }
+                            if (result.largeFiles.isNotEmpty()) {
+                                Text("Большие файлы (>50 МБ): ${result.largeFiles.size}", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.height(8.dp))
+                            }
+                            if (result.unusedApps.isNotEmpty()) {
+                                Text("Сторонние приложения: ${result.unusedApps.size}", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            }
+                            if (result.duplicates.isEmpty() && result.largeFiles.isEmpty() && result.unusedApps.isEmpty()) {
+                                Text("Мусора не найдено. Телефон уже чистый!", fontSize = 18.sp)
+                            }
+                        }
                     },
                     confirmButton = {
                         Button(
                             onClick = {
                                 scope.launch {
-                                    val freed = withContext(Dispatchers.IO) {
-                                        CleanerEngine.deleteSelected(duplicateGroups, duplicateGroups.indices.toSet())
+                                    var totalFreed = result.freedBytes
+                                    totalFreed += withContext(Dispatchers.IO) {
+                                        CleanerEngine.deleteSelected(result.duplicates, result.duplicates.indices.toSet())
                                     }
-                                    status = "Очищено: ${freed / (1024 * 1024)} МБ! Телефон работает отлично"
+                                    totalFreed += withContext(Dispatchers.IO) {
+                                        CleanerEngine.deleteLargeFiles(result.largeFiles, result.largeFiles.indices.toSet())
+                                    }
+                                    status = "Очищено: ${totalFreed / (1024 * 1024)} МБ! Телефон работает отлично"
                                     storage = CleanerEngine.getStorageInfo()
-                                    showConfirm = false
+                                    showFullDialog = false
                                 }
-                            },
-                            modifier = Modifier.height(60.dp)
+                            }
                         ) {
-                            Text("Удалить выбранный мусор", fontSize = 18.sp)
+                            Text("Удалить всё найденное", fontSize = 18.sp)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showFullDialog = false }) {
+                            Text("Позже")
                         }
                     }
                 )
