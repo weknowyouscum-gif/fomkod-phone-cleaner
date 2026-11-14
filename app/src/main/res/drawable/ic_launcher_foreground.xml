@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Simplified broom and ФК letters -->
+    <path
+        android:fillColor="#1976D2"
+        android:pathData="M54,20 L58,70 L50,70 Z" />
+    <path
+        android:fillColor="#1565C0"
+        android:pathData="M40,75 Q54,85 68,75 L65,90 Q54,100 43,90 Z" />
+    <!-- Ф -->
+    <path
+        android:fillColor="#0D47A1"
+        android:pathData="M30,35 h18 v8 h-18 z M36,35 v25 h8 v-25 z" />
+    <!-- К -->
+    <path
+        android:fillColor="#0D47A1"
+        android:pathData="M60,35 h8 v25 h-8 z M68,40 l12,10 l-12,10 z" />
+</vector>
